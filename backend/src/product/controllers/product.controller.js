@@ -1,7 +1,7 @@
 // Please don't change the pre-written code
 // Import the necessary modules here
 
-import { ErrorHandler } from "../../../utils/errorHandler.js";
+import { ErrorHandler } from '../../../utils/errorHandler.js';
 import {
   addNewProductRepo,
   deleProductRepo,
@@ -10,8 +10,8 @@ import {
   getProductDetailsRepo,
   getTotalCountsOfProduct,
   updateProductRepo,
-} from "../model/product.repository.js";
-import ProductModel from "../model/product.schema.js";
+} from '../model/product.repository.js';
+import ProductModel from '../model/product.schema.js';
 
 export const addNewProduct = async (req, res, next) => {
   try {
@@ -22,7 +22,7 @@ export const addNewProduct = async (req, res, next) => {
     if (product) {
       res.status(201).json({ success: true, product });
     } else {
-      return next(new ErrorHandler(400, "some error occured!"));
+      return next(new ErrorHandler(400, 'some error occured!'));
     }
   } catch (error) {
     return next(new ErrorHandler(400, error));
@@ -30,7 +30,41 @@ export const addNewProduct = async (req, res, next) => {
 };
 
 export const getAllProducts = async (req, res, next) => {
-  // Implement the functionality for search, filter and pagination this function.
+  try {
+    // Implement the functionality for search, filter and pagination this function.
+    //search based on provided keyword
+    console.log(req.query);
+    const queryObj = { ...req.query };
+    const searchKey = {};
+    if (queryObj.searchKeyword) {
+      const regexPattern = new RegExp(queryObj.searchKeyword);
+      // i to make case insensitive
+      searchKey.name = {
+        $regex: regexPattern,
+        $options: 'i',
+      };
+    }
+    let query = ProductModel.find(searchKey);
+    const excludedFields = ['page', 'searchKeyword', 'limit'];
+    excludedFields.forEach((el) => delete queryObj[el]);
+    // 1B) Advanced filtering
+    let queryStr = JSON.stringify(queryObj);
+
+    queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
+    query = query.find(JSON.parse(queryStr));
+    const page = req.query.page * 1 || 1;
+    const limit = req.query.limit * 1 || 10;
+    const skip = (page - 1) * limit;
+    query = query.skip(skip).limit(limit);
+    const products = await query;
+    res.status(200).json({
+      success: true,
+      products,
+      page: req.query.page || 1,
+    });
+  } catch (error) {
+    return next(new ErrorHandler(500, error));
+  }
 };
 
 export const updateProduct = async (req, res, next) => {
@@ -39,7 +73,7 @@ export const updateProduct = async (req, res, next) => {
     if (updatedProduct) {
       res.status(200).json({ success: true, updatedProduct });
     } else {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
   } catch (error) {
     return next(new ErrorHandler(400, error));
@@ -52,7 +86,7 @@ export const deleteProduct = async (req, res, next) => {
     if (deletedProduct) {
       res.status(200).json({ success: true, deletedProduct });
     } else {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
   } catch (error) {
     return next(new ErrorHandler(400, error));
@@ -65,7 +99,7 @@ export const getProductDetails = async (req, res, next) => {
     if (productDetails) {
       res.status(200).json({ success: true, productDetails });
     } else {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
   } catch (error) {
     return next(new ErrorHandler(400, error));
@@ -89,7 +123,7 @@ export const rateProduct = async (req, res, next) => {
     }
     const product = await findProductRepo(productId);
     if (!product) {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
     const findRevieweIndex = product.reviews.findIndex((rev) => {
       return rev.user.toString() === user.toString();
@@ -108,7 +142,7 @@ export const rateProduct = async (req, res, next) => {
     await product.save({ validateBeforeSave: false });
     res
       .status(201)
-      .json({ success: true, msg: "thx for rating the product", product });
+      .json({ success: true, msg: 'thx for rating the product', product });
   } catch (error) {
     return next(new ErrorHandler(500, error));
   }
@@ -118,7 +152,7 @@ export const getAllReviewsOfAProduct = async (req, res, next) => {
   try {
     const product = await findProductRepo(req.params.id);
     if (!product) {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
     res.status(200).json({ success: true, reviews: product.reviews });
   } catch (error) {
@@ -134,13 +168,13 @@ export const deleteReview = async (req, res, next) => {
       return next(
         new ErrorHandler(
           400,
-          "pls provide productId and reviewId as query params"
+          'pls provide productId and reviewId as query params'
         )
       );
     }
     const product = await findProductRepo(productId);
     if (!product) {
-      return next(new ErrorHandler(400, "Product not found!"));
+      return next(new ErrorHandler(400, 'Product not found!'));
     }
     const reviews = product.reviews;
 
@@ -152,12 +186,25 @@ export const deleteReview = async (req, res, next) => {
     }
 
     const reviewToBeDeleted = reviews[isReviewExistIndex];
+    const userId = req.user._id.toString();
+    // if review author is not current user return 403 error
+    if (reviewToBeDeleted.user.toString() != userId) {
+      return next(
+        new ErrorHandler(403, "you don't have access to this resource")
+      );
+    }
     reviews.splice(isReviewExistIndex, 1);
-
+    // logic to update avg rating on deleting a review same as on creating a review
+    let avgRating = 0;
+    reviews.forEach((rev) => {
+      avgRating += rev.rating;
+    });
+    const updatedRatingOfProduct = avgRating / product.reviews.length;
+    product.rating = updatedRatingOfProduct;
     await product.save({ validateBeforeSave: false });
     res.status(200).json({
       success: true,
-      msg: "review deleted successfully",
+      msg: 'review deleted successfully',
       deletedReview: reviewToBeDeleted,
       product,
     });

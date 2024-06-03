@@ -1,10 +1,10 @@
 // Please don't change the pre-written code
 // Import the necessary modules here
 
-import { sendPasswordResetEmail } from "../../../utils/emails/passwordReset.js";
-import { sendWelcomeEmail } from "../../../utils/emails/welcomeMail.js";
-import { ErrorHandler } from "../../../utils/errorHandler.js";
-import { sendToken } from "../../../utils/sendToken.js";
+import { sendPasswordResetEmail } from '../../../utils/emails/passwordReset.js';
+import { sendWelcomeEmail } from '../../../utils/emails/welcomeMail.js';
+import { ErrorHandler } from '../../../utils/errorHandler.js';
+import { sendToken } from '../../../utils/sendToken.js';
 import {
   createNewUserRepo,
   deleteUserRepo,
@@ -13,8 +13,8 @@ import {
   getAllUsersRepo,
   updateUserProfileRepo,
   updateUserRoleAndProfileRepo,
-} from "../models/user.repository.js";
-import crypto from "crypto";
+} from '../models/user.repository.js';
+import crypto from 'crypto';
 
 export const createNewUser = async (req, res, next) => {
   const { name, email, password } = req.body;
@@ -23,9 +23,14 @@ export const createNewUser = async (req, res, next) => {
     await sendToken(newUser, res, 200);
 
     // Implement sendWelcomeEmail function to send welcome message
-    await sendWelcomeEmail(newUser);
+    await sendWelcomeEmail(newUser, '#');
   } catch (err) {
     //  handle error for duplicate email
+    if (err.code === 11000) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'email already registered' });
+    }
     return next(new ErrorHandler(400, err));
   }
 };
@@ -34,17 +39,17 @@ export const userLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return next(new ErrorHandler(400, "please enter email/password"));
+      return next(new ErrorHandler(400, 'please enter email/password'));
     }
     const user = await findUserRepo({ email }, true);
     if (!user) {
       return next(
-        new ErrorHandler(401, "user not found! register yourself now!!")
+        new ErrorHandler(401, 'user not found! register yourself now!!')
       );
     }
     const passwordMatch = await user.comparePassword(password);
     if (!passwordMatch) {
-      return next(new ErrorHandler(401, "Invalid email or passswor!"));
+      return next(new ErrorHandler(401, 'Invalid email or passswor!'));
     }
     await sendToken(user, res, 200);
   } catch (error) {
@@ -55,19 +60,63 @@ export const userLogin = async (req, res, next) => {
 export const logoutUser = async (req, res, next) => {
   res
     .status(200)
-    .cookie("token", null, {
+    .cookie('token', null, {
       expires: new Date(Date.now()),
       httpOnly: true,
     })
-    .json({ success: true, msg: "logout successful" });
+    .json({ success: true, msg: 'logout successful' });
 };
 
 export const forgetPassword = async (req, res, next) => {
   // Implement feature for forget password
+  try {
+    const user = await findUserRepo({ email: req.body.email });
+    if (!user) {
+      return next(
+        new ErrorHandler(
+          404,
+          'There is no user with email address ' + req.body.email
+        )
+      );
+    }
+    const resetToken = await user.getResetPasswordToken();
+    await user.save({ validateBeforeSave: false });
+    res.json({
+      success: true,
+      msg: 'Token sent to email!',
+    });
+    await sendPasswordResetEmail(user, resetToken);
+  } catch (error) {
+    return next(new ErrorHandler(500, error));
+  }
 };
 
 export const resetUserPassword = async (req, res, next) => {
-  // Implement feature for reset password
+  try {
+    // Implement feature for reset password
+    const { newPassword, confirmPassword } = req.body;
+    // 1) Get user based on the token
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(req.params.token)
+      .digest('hex');
+    const user = await findUserForPasswordResetRepo(hashedToken);
+    if (!user) {
+      return next(new ErrorHandler(400, 'Token is invalid or has expired'));
+    }
+    if (!newPassword || newPassword !== confirmPassword) {
+      return next(
+        new ErrorHandler(401, 'mismatch new password and confirm password!')
+      );
+    }
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+    await sendToken(user, res, 200);
+  } catch (error) {
+    return next(new ErrorHandler(500, error));
+  }
 };
 
 export const getUserDetails = async (req, res, next) => {
@@ -83,18 +132,18 @@ export const updatePassword = async (req, res, next) => {
   const { currentPassword, newPassword, confirmPassword } = req.body;
   try {
     if (!currentPassword) {
-      return next(new ErrorHandler(401, "pls enter current password"));
+      return next(new ErrorHandler(401, 'pls enter current password'));
     }
 
     const user = await findUserRepo({ _id: req.user._id }, true);
     const passwordMatch = await user.comparePassword(currentPassword);
     if (!passwordMatch) {
-      return next(new ErrorHandler(401, "Incorrect current password!"));
+      return next(new ErrorHandler(401, 'Incorrect current password!'));
     }
 
     if (!newPassword || newPassword !== confirmPassword) {
       return next(
-        new ErrorHandler(401, "mismatch new password and confirm password!")
+        new ErrorHandler(401, 'mismatch new password and confirm password!')
       );
     }
 
@@ -135,7 +184,7 @@ export const getUserDetailsForAdmin = async (req, res, next) => {
     if (!userDetails) {
       return res
         .status(400)
-        .json({ success: false, msg: "no user found with provided id" });
+        .json({ success: false, msg: 'no user found with provided id' });
     }
     res.status(200).json({ success: true, userDetails });
   } catch (error) {
@@ -149,12 +198,12 @@ export const deleteUser = async (req, res, next) => {
     if (!deletedUser) {
       return res
         .status(400)
-        .json({ success: false, msg: "no user found with provided id" });
+        .json({ success: false, msg: 'no user found with provided id' });
     }
 
     res
       .status(200)
-      .json({ success: true, msg: "user deleted successfully", deletedUser });
+      .json({ success: true, msg: 'user deleted successfully', deletedUser });
   } catch (error) {
     return next(new ErrorHandler(400, error));
   }
@@ -162,4 +211,15 @@ export const deleteUser = async (req, res, next) => {
 
 export const updateUserProfileAndRole = async (req, res, next) => {
   // Write your code here for updating the roles of other users by admin
+  const { id: _id } = req.params;
+  const { role } = req.body;
+  try {
+    const user = await updateUserRoleAndProfileRepo(_id, { role });
+    if (!user) {
+      return next(new ErrorHandler(404, 'User not found'));
+    }
+    res.status(200).json({ success: true, user });
+  } catch (error) {
+    return next(new ErrorHandler(400, error));
+  }
 };

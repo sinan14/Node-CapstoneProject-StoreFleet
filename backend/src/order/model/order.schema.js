@@ -1,8 +1,12 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
 const orderSchema = new mongoose.Schema({
   shippingInfo: {
     address: {
+      type: String,
+      required: true,
+    },
+    city: {
       type: String,
       required: true,
     },
@@ -13,7 +17,7 @@ const orderSchema = new mongoose.Schema({
     country: {
       type: String,
       required: true,
-      default: "IN",
+      default: 'IN',
     },
     pincode: {
       type: Number,
@@ -44,14 +48,14 @@ const orderSchema = new mongoose.Schema({
       },
       product: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Product",
+        ref: 'Product',
         required: true,
       },
     },
   ],
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
+    ref: 'User',
     required: true,
   },
   paymentInfo: {
@@ -67,7 +71,6 @@ const orderSchema = new mongoose.Schema({
   },
   paidAt: {
     type: Date,
-    required: true,
   },
   itemsPrice: {
     type: Number,
@@ -92,7 +95,7 @@ const orderSchema = new mongoose.Schema({
   orderStatus: {
     type: String,
     required: true,
-    default: "Processing",
+    default: 'Processing',
   },
   deliveredAt: Date,
   createdAt: {
@@ -101,5 +104,5 @@ const orderSchema = new mongoose.Schema({
   },
 });
 
-const OrderModel = mongoose.model("Order", orderSchema);
+const OrderModel = mongoose.model('Order', orderSchema);
 export default OrderModel;
